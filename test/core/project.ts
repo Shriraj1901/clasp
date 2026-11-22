@@ -15,6 +15,7 @@
 // This file contains tests for the core project management functionalities.
 
 import path from 'path';
+import fs from 'fs/promises';
 
 import {fileURLToPath} from 'url';
 import {expect} from 'chai';
@@ -384,6 +385,64 @@ describe('Project operations', function () {
         credentials: mockCredentials(),
       });
       expect(clasp.project.exists()).to.be.true;
+    });
+
+    afterEach(function () {
+      mockfs.restore();
+    });
+  });
+
+  // Saving settings rewrites .clasp.json, so settings the user configured there must survive.
+  describe('with filePushOrder in .clasp.json, authenticated', function () {
+    const filePushOrder = ['src/lib/util.js', 'src/Code.js', 'src/ui/page.html'];
+
+    beforeEach(function () {
+      mockfs({
+        '.clasp.json': JSON.stringify({
+          scriptId: 'mock-script-id',
+          rootDir: 'src',
+          filePushOrder,
+          skipSubdirectories: true,
+        }),
+        'src/appsscript.json': mockfs.load(path.resolve(__dirname, '../fixtures/appsscript-no-services.json')),
+        'src/Code.js': mockfs.load(path.resolve(__dirname, '../fixtures/Code.js')),
+      });
+    });
+
+    it('should keep filePushOrder when saving settings', async function () {
+      const clasp = await initClaspInstance({
+        credentials: mockCredentials(),
+      });
+      await clasp.project.updateSettings();
+
+      const saved = JSON.parse(await fs.readFile('.clasp.json', 'utf8'));
+      expect(saved.filePushOrder).to.deep.equal(filePushOrder);
+      expect(saved.rootDir).to.equal('src');
+      expect(saved.skipSubdirectories).to.be.true;
+    });
+
+    it('should keep filePushOrder when setting the project ID', async function () {
+      const clasp = await initClaspInstance({
+        credentials: mockCredentials(),
+      });
+      await clasp.project.setProjectId('mock-gcp-project');
+
+      const saved = JSON.parse(await fs.readFile('.clasp.json', 'utf8'));
+      expect(saved.projectId).to.equal('mock-gcp-project');
+      expect(saved.filePushOrder).to.deep.equal(filePushOrder);
+    });
+
+    it('should save an empty filePushOrder when none is configured', async function () {
+      mockfs({
+        '.clasp.json': JSON.stringify({scriptId: 'mock-script-id'}),
+      });
+      const clasp = await initClaspInstance({
+        credentials: mockCredentials(),
+      });
+      await clasp.project.updateSettings();
+
+      const saved = JSON.parse(await fs.readFile('.clasp.json', 'utf8'));
+      expect(saved.filePushOrder).to.deep.equal([]);
     });
 
     afterEach(function () {
